@@ -30,6 +30,8 @@ def main():
     # Use relative paths so running the script from the project root is convenient.
     cfg = {
         'data_root': '/Users/ewheeler/encoder_CARE/data',
+        'clean_dir': 'clean',
+        'degraded_dir': 'degraded',
         'epochs': 100,
         'batch_size': 32,
         'lr': 2e-4,

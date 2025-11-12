@@ -14,6 +14,8 @@ from .utils import save_epoch_visuals
 
 def train_model(
     data_root="./data",
+    clean_dir='clean',
+    degraded_dir='degraded',
     epochs=100,
     batch_size=8,
     lr=2e-4,
@@ -39,7 +41,8 @@ def train_model(
     opt = optim.Adam(params, lr=lr)
 
     dataloader = get_dataloaders(root=data_root, batch_size=batch_size, image_size=image_size,
-                                normalization=normalization, pmin=pmin, pmax=pmax, max_samples=max_samples, norm_cache=norm_cache)
+                                normalization=normalization, pmin=pmin, pmax=pmax, max_samples=max_samples, norm_cache=norm_cache,
+                                clean_dir=clean_dir, degraded_dir=degraded_dir)
 
     loss_fn = TotalLoss()
 

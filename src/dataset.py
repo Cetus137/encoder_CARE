@@ -124,7 +124,36 @@ class UnpairedImageDataset(Dataset):
             if arr.size == 0:
                 arr = np.zeros((self.size, self.size), dtype=np.float32)
 
-            if self.normalization == 'per_image':
+            # Normalization options:
+            # - 'none': assume image is already in 0..1 (float32/float64). We will
+            #           clip to [0,1] and leave values unchanged otherwise.
+            # - 'per_image': rescale each image to [0,1] based on its min/max.
+            # - 'global': clip to the precomputed global percentiles and scale.
+            if self.normalization == 'none':
+                # If the data is float and within 0..1 this preserves it; for
+                # integer types we still convert to float and scale by type
+                # range if needed — but here we assume user provided 0..1 floats.
+                # To be robust, if the image appears to be in a larger range
+                # (e.g., 0-255 ints mistakenly saved as floats) we fall back to
+                # per-image normalization.
+                vmin = float(arr.min())
+                vmax = float(arr.max())
+                if vmax <= vmin:
+                    # degenerate: make zeros
+                    arr = arr * 0.0
+                elif vmax <= 1.0 and vmin >= 0.0:
+                    # already 0..1 float — just clip small numerical errors
+                    arr = np.clip(arr, 0.0, 1.0)
+                else:
+                    # Unexpected range — fallback to per-image normalization
+                    a_min = vmin
+                    a_max = vmax
+                    if a_max > a_min:
+                        arr = (arr - a_min) / (a_max - a_min)
+                    else:
+                        arr = arr * 0.0
+
+            elif self.normalization == 'per_image':
                 a_min = float(arr.min())
                 a_max = float(arr.max())
                 if a_max > a_min:
@@ -177,9 +206,9 @@ class UnpairedImageDataset(Dataset):
 
         return t_c, t_d
 
-def get_dataloaders(root='./data', batch_size=8, image_size=64, augment=True, num_workers=2,
+def get_dataloaders(root='./data', clean_dir='clean', degraded_dir='degraded', batch_size=8, image_size=64, augment=True, num_workers=2,
                     normalization='global', pmin=0.5, pmax=99.5, max_samples=1000000, norm_cache=None):
-    ds = UnpairedImageDataset(root=root, image_size=image_size, augment=augment,
+    ds = UnpairedImageDataset(root=root, clean_dir=clean_dir, degraded_dir=degraded_dir, image_size=image_size, augment=augment,
                               normalization=normalization, pmin=pmin, pmax=pmax, max_samples=max_samples, norm_cache=norm_cache)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
     return loader
