@@ -154,12 +154,29 @@ class UnpairedImageDataset(Dataset):
                         arr = arr * 0.0
 
             elif self.normalization == 'per_image':
-                a_min = float(arr.min())
-                a_max = float(arr.max())
-                if a_max > a_min:
-                    arr = (arr - a_min) / (a_max - a_min)
+                # Use per-image percentile clipping followed by scaling. This
+                # is more robust to outliers than min/max scaling. The
+                # percentiles used are `self.pmin` and `self.pmax` (defaults
+                # 0.5/99.5). If percentiles collapse to a degenerate range we
+                # fall back to strict min/max scaling and finally to zeros.
+                try:
+                    lo = float(np.percentile(arr, self.pmin))
+                    hi = float(np.percentile(arr, self.pmax))
+                except Exception:
+                    lo = float(arr.min())
+                    hi = float(arr.max())
+
+                if hi > lo:
+                    arr = np.clip(arr, lo, hi)
+                    arr = (arr - lo) / (hi - lo)
                 else:
-                    arr = arr * 0.0
+                    # fallback to min/max
+                    a_min = float(arr.min())
+                    a_max = float(arr.max())
+                    if a_max > a_min:
+                        arr = (arr - a_min) / (a_max - a_min)
+                    else:
+                        arr = arr * 0.0
             else:
                 # global normalization by clipping to percentiles and scaling
                 if self.global_min is None or self.global_max is None:

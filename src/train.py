@@ -20,6 +20,7 @@ def train_model(
     batch_size=8,
     lr=2e-4,
     kl_anneal_epochs=10,
+    kl_weight=0.1,  # KL divergence weight (lower = less regularization)
     device=None,
     save_interval=10,
     out_dir="./outputs",
@@ -40,11 +41,24 @@ def train_model(
     params = list(enc.parameters()) + list(dec.parameters()) + list(seg.parameters())
     opt = optim.Adam(params, lr=lr)
 
+    # Add learning rate scheduler to help escape plateaus
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min', factor=0.5, patience=5, verbose=True)
+
     dataloader = get_dataloaders(root=data_root, batch_size=batch_size, image_size=image_size,
                                 normalization=normalization, pmin=pmin, pmax=pmax, max_samples=max_samples, norm_cache=norm_cache,
                                 clean_dir=clean_dir, degraded_dir=degraded_dir)
 
-    loss_fn = TotalLoss()
+    # Initialize loss function with custom KL weight
+    loss_weights = dict(
+        rec=100.0,
+        kl=kl_weight,
+        align=10.0,
+        cross=10.0,
+        seg=5.0,
+        perc=1.0,
+    )
+    loss_fn = TotalLoss(weights=loss_weights)
+    print(f"Loss weights: {loss_weights}")
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -116,7 +130,36 @@ def train_model(
             opt.step()
 
             if i % 20 == 0:
-                print(f"Epoch {epoch}/{epochs} Iter {i} Loss {total_loss.item():.4f}")
+                # latent diagnostics (detect posterior collapse)
+                try:
+                    zs_mean = z_s_C.mean().item(); zs_std = z_s_C.std().item()
+                    zt_mean = z_t_C.mean().item(); zt_std = z_t_C.std().item()
+                    zs_mean_d = z_s_D.mean().item(); zs_std_d = z_s_D.std().item()
+                    zt_mean_d = z_t_D.mean().item(); zt_std_d = z_t_D.std().item()
+                    print(f"Epoch {epoch}/{epochs} Iter {i} Loss {total_loss.item():.4f}")
+                    
+                    # Display each loss component: raw value and weighted contribution
+                    print(f"  Loss components (raw -> weighted):")
+                    rec_raw = loss_dict['rec'].item()
+                    kl_raw = loss_dict['kl'].item()
+                    align_raw = loss_dict['align'].item()
+                    cross_raw = loss_dict['cross'].item()
+                    seg_raw = loss_dict['seg'].item()
+                    perc_raw = loss_dict['perc'].item()
+                    
+                    print(f"    rec:   {rec_raw:.4f} -> {rec_raw * loss_fn.w['rec']:.4f}")
+                    print(f"    kl:    {kl_raw:.4f} -> {kl_raw * loss_fn.w['kl']:.4f}")
+                    print(f"    align: {align_raw:.4f} -> {align_raw * loss_fn.w['align']:.4f}")
+                    print(f"    cross: {cross_raw:.4f} -> {cross_raw * loss_fn.w['cross']:.4f}")
+                    print(f"    seg:   {seg_raw:.4f} -> {seg_raw * loss_fn.w['seg']:.4f}")
+                    print(f"    perc:  {perc_raw:.4f} -> {perc_raw * loss_fn.w['perc']:.4f}")
+                    
+                    print(f"z_shape C mean/std: {zs_mean:.6f} / {zs_std:.6f}")
+                    print(f"z_style C mean/std: {zt_mean:.6f} / {zt_std:.6f}")
+                    print(f"z_shape D mean/std: {zs_mean_d:.6f} / {zs_std_d:.6f}")
+                    print(f"z_style D mean/std: {zt_mean_d:.6f} / {zt_std_d:.6f}")
+                except Exception as e:
+                    print(f"Failed to compute latent stats: {e}")
 
         # at epoch end, save visuals from the last batch
         try:
@@ -155,15 +198,6 @@ def train_model(
                     return stats
 
                 stats_orig = _stats(x_C[:n_vis])
-                stats_deg = _stats(x_D[:n_vis])
-                print(f"Epoch {epoch} stats (original): {stats_orig}")
-                print(f"Epoch {epoch} stats (degraded):  {stats_deg}")
-
-                # save stats to json
-                stats_path = os.path.join(out_dir, f'epoch_{epoch:04d}_stats.json')
-                with open(stats_path, 'w') as f:
-                    json.dump({'epoch': epoch, 'original': stats_orig, 'degraded': stats_deg}, f, indent=2)
-                print(f"Saved stats: {stats_path}")
             except Exception as e:
                 print(f"Failed to compute/save stats: {e}")
             # NOTE: we intentionally do NOT save degraded TIFFs anymore (user requested no TIFF exports).
@@ -174,5 +208,8 @@ def train_model(
         if epoch % save_interval == 0 or epoch == epochs:
             state = dict(epoch=epoch, enc=enc.state_dict(), dec=dec.state_dict(), seg=seg.state_dict(), opt=opt.state_dict())
             save_checkpoint(state, out_dir, name=f'checkpoint_epoch_{epoch}.pth')
+
+        # Update learning rate based on reconstruction loss (helps escape plateaus)
+        scheduler.step(loss_dict['rec'].item())
 
     return dict(enc=enc, dec=dec, seg=seg)

@@ -1,4 +1,4 @@
 """encoder_CARE package entry points"""
-from .train import train_model
+from .src.train import train_model
 
 __all__ = ['train_model']

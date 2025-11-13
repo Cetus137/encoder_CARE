@@ -77,8 +77,12 @@ class FiLM(nn.Module):
 
     def forward(self, x, style):
         # x: (B, C, H, W), style: (B, style_dim)
-        gamma = self.gamma(style).unsqueeze(-1).unsqueeze(-1)
-        beta = self.beta(style).unsqueeze(-1).unsqueeze(-1)
+        # compute raw projections
+        gamma_lin = self.gamma(style)
+        beta_lin = self.beta(style)
+
+        gamma = gamma_lin.unsqueeze(-1).unsqueeze(-1)
+        beta = beta_lin.unsqueeze(-1).unsqueeze(-1)
         return x * (1 + gamma) + beta
 
 

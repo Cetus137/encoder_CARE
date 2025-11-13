@@ -53,7 +53,7 @@ class TotalLoss:
     def __init__(self, weights=None):
         default = dict(
             rec=100.0,
-            kl=1.0,
+            kl=0.1,  # Reduced from 1.0 to prevent KL from dominating
             align=10.0,
             cross=10.0,
             seg=5.0,

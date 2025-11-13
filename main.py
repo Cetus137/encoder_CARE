@@ -35,10 +35,11 @@ def main():
         'epochs': 100,
         'batch_size': 32,
         'lr': 2e-4,
-        'kl_anneal_epochs': 10,
+        'kl_anneal_epochs': 50,
+        'kl_weight': 0.01,  # Lower KL weight to prevent it from dominating (default was 1.0)
         'device': None,  # set to 'cuda' or 'cpu' to override automatic selection
         'save_interval': 10,
-        'out_dir': './outputs',
+        'out_dir': '/Users/ewheeler/encoder_CARE/outputs',
         'image_size': 128,
     }
 
