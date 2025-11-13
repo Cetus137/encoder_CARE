@@ -22,7 +22,7 @@ class Encoder(nn.Module):
     Produces (mu_shape, logvar_shape), (mu_style, logvar_style)
     Also returns an intermediate feature map for optional perceptual loss.
     """
-    def __init__(self, in_ch=1, base_ch=32, z_shape_dim=64, z_style_dim=32):
+    def __init__(self, in_ch=1, base_ch=32, z_shape_dim=256, z_style_dim=128):
         super().__init__()
         self.enc1 = ConvBlock(in_ch, base_ch)
         self.enc2 = ConvBlock(base_ch, base_ch * 2)

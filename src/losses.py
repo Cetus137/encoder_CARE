@@ -72,6 +72,7 @@ class TotalLoss:
             seg=5.0,
             perc=1.0,
             seg_entropy=1.0,  # Entropy regularization to prevent constant segmentations
+            gradient=10.0,  # Gradient loss to preserve edges and details
         )
         if weights is None:
             weights = default
