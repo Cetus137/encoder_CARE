@@ -30,10 +30,10 @@ def main():
     # Use relative paths so running the script from the project root is convenient.
     cfg = {
         'data_root': '/Users/ewheeler/encoder_CARE/data',
-        'clean_dir': 'clean',
-        'degraded_dir': 'degraded',
+        'clean_dir': 'clean_subset',
+        'degraded_dir': 'noisy_subset',
         'epochs': 100,
-        'batch_size': 32,
+        'batch_size': 128,
         'lr': 2e-4,
         'kl_anneal_epochs': 50,
         'kl_weight': 0.01,  # Lower KL weight to prevent it from dominating (default was 1.0)
@@ -41,6 +41,9 @@ def main():
         'save_interval': 10,
         'out_dir': '/Users/ewheeler/encoder_CARE/outputs',
         'image_size': 128,
+        'normalization': None,
+        'num_workers': 8,  # Parallel data loading workers (increase for faster loading)
+        'pin_memory': True,  # Pin memory for faster CPU->GPU transfer
     }
 
     print("Starting training with config:")

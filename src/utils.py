@@ -61,9 +61,15 @@ def save_epoch_visuals(out_dir, epoch, images_dict, keys=None, n_samples=4, nrow
             else:
                 raise ValueError(f"Unsupported tensor shape for key {k}: {t.shape}")
 
-            # Ensure float and clamp to [0,1]
+            # Ensure float
             img = img.float()
+            
+            # Clamp to [0,1] to preserve true range
             img = torch.clamp(img, 0.0, 1.0)
+            
+            # Debug: print value ranges
+            if i == 0:  # only print for first sample
+                print(f"  {k}: min={img.min():.4f}, max={img.max():.4f}, mean={img.mean():.4f}")
 
             # Convert single-channel to 3-channel for better visibility
             if img.size(0) == 1:
@@ -74,7 +80,8 @@ def save_epoch_visuals(out_dir, epoch, images_dict, keys=None, n_samples=4, nrow
     if len(images_list) == 0:
         return None
 
-    grid = vutils.make_grid(images_list, nrow=nrow, normalize=True, scale_each=True)
+    # Don't use normalize=True since we already normalized each image
+    grid = vutils.make_grid(images_list, nrow=nrow, normalize=False, scale_each=False)
     out_path = os.path.join(out_dir, f'epoch_{epoch:04d}_viz.png')
     vutils.save_image(grid, out_path)
     return out_path

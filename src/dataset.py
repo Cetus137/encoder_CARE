@@ -21,6 +21,11 @@ class UnpairedImageDataset(Dataset):
         self.max_samples = int(max_samples)
         self.norm_cache = norm_cache or os.path.join(root, 'norm_stats.npz')
 
+        print(f"UnpairedImageDataset initialized:")
+        print(f"  Clean images: {len(self.clean_paths)} from {os.path.join(root, clean_dir)}")
+        print(f"  Degraded images: {len(self.deg_paths)} from {os.path.join(root, degraded_dir)}")
+        print(f"  Normalization mode: {self.normalization}")
+
         # compute or load global normalization if requested
         self.global_min = None
         self.global_max = None
@@ -107,6 +112,13 @@ class UnpairedImageDataset(Dataset):
     def __getitem__(self, idx):
         c = self.clean_paths[idx % len(self.clean_paths)] if self.clean_paths else None
         d = self.deg_paths[idx % len(self.deg_paths)] if self.deg_paths else None
+        
+        # Debug: print first item
+        if idx == 0:
+            print(f"DEBUG __getitem__(0):")
+            print(f"  clean path: {c}")
+            print(f"  degraded path: {d}")
+        
         def _load_tiff_to_tensor(path):
             # Read TIFF into numpy and convert to float32 tensor with range [0,1]
             arr = tiff.imread(path)
@@ -223,9 +235,9 @@ class UnpairedImageDataset(Dataset):
 
         return t_c, t_d
 
-def get_dataloaders(root='./data', clean_dir='clean', degraded_dir='degraded', batch_size=8, image_size=64, augment=True, num_workers=2,
-                    normalization='global', pmin=0.5, pmax=99.5, max_samples=1000000, norm_cache=None):
+def get_dataloaders(root='./data', clean_dir='clean', degraded_dir='degraded', batch_size=8, image_size=64, augment=True, num_workers=8,
+                    normalization='global', pmin=0.5, pmax=99.5, max_samples=1000000, norm_cache=None, pin_memory=True):
     ds = UnpairedImageDataset(root=root, clean_dir=clean_dir, degraded_dir=degraded_dir, image_size=image_size, augment=augment,
                               normalization=normalization, pmin=pmin, pmax=pmax, max_samples=max_samples, norm_cache=norm_cache)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True, pin_memory=pin_memory)
     return loader

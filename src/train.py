@@ -30,8 +30,14 @@ def train_model(
     pmax=99.5,
     max_samples=1000000,
     norm_cache=None,
+    num_workers=8,  # Number of parallel data loading workers
+    pin_memory=True,  # Pin memory for faster GPU transfer
 ):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    use_amp = device == "cuda"  # Enable automatic mixed precision on GPU
+    
+    if use_amp:
+        print("Using automatic mixed precision (AMP) for faster training")
 
     # models
     enc = Encoder(in_ch=1).to(device)
@@ -40,13 +46,17 @@ def train_model(
 
     params = list(enc.parameters()) + list(dec.parameters()) + list(seg.parameters())
     opt = optim.Adam(params, lr=lr)
+    
+    # GradScaler for mixed precision
+    scaler = torch.cuda.amp.GradScaler() if use_amp else None
 
     # Add learning rate scheduler to help escape plateaus
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min', factor=0.5, patience=5)
 
     dataloader = get_dataloaders(root=data_root, batch_size=batch_size, image_size=image_size,
                                 normalization=normalization, pmin=pmin, pmax=pmax, max_samples=max_samples, norm_cache=norm_cache,
-                                clean_dir=clean_dir, degraded_dir=degraded_dir)
+                                clean_dir=clean_dir, degraded_dir=degraded_dir, 
+                                num_workers=num_workers, pin_memory=pin_memory)
 
     # Initialize loss function with custom KL weight
     loss_weights = dict(
@@ -69,6 +79,12 @@ def train_model(
             x_C = x_C.to(device)
             x_D = x_D.to(device)
 
+            # Debug: check data loading on first iteration
+            if epoch == 1 and i == 0:
+                print(f"DEBUG - Input data stats:")
+                print(f"  x_C: shape={x_C.shape}, min={x_C.min():.4f}, max={x_C.max():.4f}, mean={x_C.mean():.4f}")
+                print(f"  x_D: shape={x_D.shape}, min={x_D.min():.4f}, max={x_D.max():.4f}, mean={x_D.mean():.4f}")
+
             # Ensure single-channel inputs: if tensors are (B,H,W) add channel dim.
             # If multi-channel tensors are provided, raise an informative error.
             if x_C.dim() == 3:
@@ -80,56 +96,63 @@ def train_model(
             if x_D.size(1) > 1:
                 raise ValueError(f"x_D has {x_D.size(1)} channels; encoder_CARE expects single-channel images. Please provide single-channel TIFFs.")
 
-            # Encode
-            (mu_s_C, logv_s_C), (mu_t_C, logv_t_C), feat_C = enc(x_C)
-            (mu_s_D, logv_s_D), (mu_t_D, logv_t_D), feat_D = enc(x_D)
+            # Use automatic mixed precision if on GPU
+            with torch.cuda.amp.autocast(enabled=use_amp):
+                # Encode
+                (mu_s_C, logv_s_C), (mu_t_C, logv_t_C), feat_C = enc(x_C)
+                (mu_s_D, logv_s_D), (mu_t_D, logv_t_D), feat_D = enc(x_D)
 
-            z_s_C = reparameterize(mu_s_C, logv_s_C)
-            z_t_C = reparameterize(mu_t_C, logv_t_C)
-            z_s_D = reparameterize(mu_s_D, logv_s_D)
-            z_t_D = reparameterize(mu_t_D, logv_t_D)
+                z_s_C = reparameterize(mu_s_C, logv_s_C)
+                z_t_C = reparameterize(mu_t_C, logv_t_C)
+                z_s_D = reparameterize(mu_s_D, logv_s_D)
+                z_t_D = reparameterize(mu_t_D, logv_t_D)
 
-            # Reconstructions
-            xhat_C = dec(z_s_C, z_t_C, domain=1)
-            xhat_D = dec(z_s_D, z_t_D, domain=0)
+                # Reconstructions
+                xhat_C = dec(z_s_C, z_t_C, domain=1)
+                xhat_D = dec(z_s_D, z_t_D, domain=0)
 
-            # cross-domain style means
-            zt_C_mean = z_t_C.mean(dim=0, keepdim=True).expand_as(z_t_C)
-            zt_D_mean = z_t_D.mean(dim=0, keepdim=True).expand_as(z_t_D)
+                # cross-domain style means
+                zt_C_mean = z_t_C.mean(dim=0, keepdim=True).expand_as(z_t_C)
+                zt_D_mean = z_t_D.mean(dim=0, keepdim=True).expand_as(z_t_D)
 
-            x_CD = dec(z_s_D, zt_C_mean, domain=1)
-            x_DC = dec(z_s_C, zt_D_mean, domain=0)
+                x_CD = dec(z_s_D, zt_C_mean, domain=1)
+                x_DC = dec(z_s_C, zt_D_mean, domain=0)
 
-            # segmentation preds
-            S_D = seg(x_D)
-            S_x_CD = seg(x_CD)
+                # segmentation preds
+                S_D = seg(x_D)
+                S_x_CD = seg(x_CD)
 
-            # compute losses
-            preds = dict(
-                xhat_C=xhat_C,
-                xhat_D=xhat_D,
-                x_CD=x_CD,
-                x_DC=x_DC,
-                S_x_CD=S_x_CD,
-                mu_s_C=mu_s_C,
-                mu_s_D=mu_s_D,
-                feat_x_CD=feat_D,  # placeholder: optional
-                feat_x_D=feat_D,
-                kl_s=kl_divergence(mu_s_C, logv_s_C) + kl_divergence(mu_s_D, logv_s_D),
-                kl_t=kl_divergence(mu_t_C, logv_t_C) + kl_divergence(mu_t_D, logv_t_D),
-            )
+                # compute losses
+                preds = dict(
+                    xhat_C=xhat_C,
+                    xhat_D=xhat_D,
+                    x_CD=x_CD,
+                    x_DC=x_DC,
+                    S_x_CD=S_x_CD,
+                    mu_s_C=mu_s_C,
+                    mu_s_D=mu_s_D,
+                    feat_x_CD=feat_D,  # placeholder: optional
+                    feat_x_D=feat_D,
+                    kl_s=kl_divergence(mu_s_C, logv_s_C) + kl_divergence(mu_s_D, logv_s_D),
+                    kl_t=kl_divergence(mu_t_C, logv_t_C) + kl_divergence(mu_t_D, logv_t_D),
+                )
 
-            targets = dict(x_C=x_C, x_D=x_D, S_x_D=S_D)
+                targets = dict(x_C=x_C, x_D=x_D, S_x_D=S_D)
 
-            kl_anneal = min(1.0, epoch / max(1.0, kl_anneal_epochs))
-            loss_dict = loss_fn(preds, targets, kl_anneal=kl_anneal)
-            total_loss = loss_dict['total']
+                kl_anneal = min(1.0, epoch / max(1.0, kl_anneal_epochs))
+                loss_dict = loss_fn(preds, targets, kl_anneal=kl_anneal)
+                total_loss = loss_dict['total']
 
             opt.zero_grad()
-            total_loss.backward()
-            opt.step()
+            if use_amp:
+                scaler.scale(total_loss).backward()
+                scaler.step(opt)
+                scaler.update()
+            else:
+                total_loss.backward()
+                opt.step()
 
-            if i % 20 == 0:
+            if i % 100 == 0:  # Changed from 20 to 100 to reduce print overhead
                 # latent diagnostics (detect posterior collapse)
                 try:
                     zs_mean = z_s_C.mean().item(); zs_std = z_s_C.std().item()
@@ -167,12 +190,12 @@ def train_model(
             # pick up to 4 samples from the last processed batch
             n_vis = min(4, x_D.size(0))
             images_dict = dict(
-                original=x_C[:n_vis].detach().cpu(),
-                degraded=x_D[:n_vis].detach().cpu(),
-                recon=xhat_D[:n_vis].detach().cpu(),
-                restored=x_CD[:n_vis].detach().cpu(),
-                seg_degraded=S_D[:n_vis].detach().cpu(),
-                seg_restored=S_x_CD[:n_vis].detach().cpu(),
+                original=x_C[:n_vis].detach().cpu().clone(),
+                degraded=x_D[:n_vis].detach().cpu().clone(),
+                recon=xhat_D[:n_vis].detach().cpu().clone(),
+                restored=x_CD[:n_vis].detach().cpu().clone(),
+                seg_degraded=S_D[:n_vis].detach().cpu().clone(),
+                seg_restored=S_x_CD[:n_vis].detach().cpu().clone(),
             )
             keys = ['original', 'degraded', 'recon', 'restored', 'seg_degraded', 'seg_restored']
             vis_path = save_epoch_visuals(out_dir, epoch, images_dict, keys=keys, n_samples=n_vis, nrow=len(keys))
