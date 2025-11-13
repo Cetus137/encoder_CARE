@@ -88,7 +88,7 @@ class FiLM(nn.Module):
 
 class Decoder(nn.Module):
     """Conditional decoder using FiLM conditioning on style and domain embedding"""
-    def __init__(self, out_ch=1, base_ch=32, z_shape_dim=64, z_style_dim=32, domain_embed_dim=8, output_size=None):
+    def __init__(self, out_ch=1, base_ch=32, z_shape_dim=256, z_style_dim=128, domain_embed_dim=8, output_size=None):
         super().__init__()
         self.output_size = output_size
         self.fc = nn.Linear(z_shape_dim + z_style_dim + domain_embed_dim, base_ch * 8)
