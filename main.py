@@ -36,7 +36,16 @@ def main():
         'batch_size': 128,
         'lr': 2e-4,
         'kl_anneal_epochs': 50,
-        'kl_weight': 0.01,  # Lower KL weight to prevent it from dominating (default was 1.0)
+        
+        # Loss weights - adjust these to balance different objectives
+        'kl_weight': 0.01,  # KL divergence (lower = sharper but less structured latents)
+        'rec_weight': 20.0,  # Reconstruction fidelity
+        'align_weight': 10.0,  # Shape latent alignment between domains
+        'cross_weight': 10.0,  # Cross-domain segmentation consistency
+        'seg_weight': 10.0,  # Segmentation dice loss
+        'perc_weight': 1.0,  # Perceptual/feature loss
+        'seg_entropy_weight': 1.0,  # Prevent segmentation collapse
+        
         'device': None,  # set to 'cuda' or 'cpu' to override automatic selection
         'save_interval': 10,
         'out_dir': '/Users/ewheeler/encoder_CARE/outputs',

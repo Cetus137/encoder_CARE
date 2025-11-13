@@ -21,6 +21,12 @@ def train_model(
     lr=2e-4,
     kl_anneal_epochs=10,
     kl_weight=0.1,  # KL divergence weight (lower = less regularization)
+    rec_weight=100.0,  # Reconstruction loss weight
+    align_weight=10.0,  # Alignment loss weight (shape latent consistency)
+    cross_weight=10.0,  # Cross-reconstruction segmentation loss weight
+    seg_weight=5.0,  # Segmentation dice loss weight
+    perc_weight=1.0,  # Perceptual loss weight
+    seg_entropy_weight=1.0,  # Segmentation entropy regularization weight
     device=None,
     save_interval=10,
     out_dir="./outputs",
@@ -58,14 +64,15 @@ def train_model(
                                 clean_dir=clean_dir, degraded_dir=degraded_dir, 
                                 num_workers=num_workers, pin_memory=pin_memory)
 
-    # Initialize loss function with custom KL weight
+    # Initialize loss function with configurable weights
     loss_weights = dict(
-        rec=100.0,
+        rec=rec_weight,
         kl=kl_weight,
-        align=10.0,
-        cross=10.0,
-        seg=5.0,
-        perc=1.0,
+        align=align_weight,
+        cross=cross_weight,
+        seg=seg_weight,
+        perc=perc_weight,
+        seg_entropy=seg_entropy_weight,
     )
     loss_fn = TotalLoss(weights=loss_weights)
     print(f"Loss weights: {loss_weights}")
