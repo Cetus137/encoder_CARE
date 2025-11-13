@@ -42,7 +42,7 @@ def train_model(
     opt = optim.Adam(params, lr=lr)
 
     # Add learning rate scheduler to help escape plateaus
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min', factor=0.5, patience=5, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(opt, mode='min', factor=0.5, patience=5)
 
     dataloader = get_dataloaders(root=data_root, batch_size=batch_size, image_size=image_size,
                                 normalization=normalization, pmin=pmin, pmax=pmax, max_samples=max_samples, norm_cache=norm_cache,
@@ -153,6 +153,7 @@ def train_model(
                     print(f"    cross: {cross_raw:.4f} -> {cross_raw * loss_fn.w['cross']:.4f}")
                     print(f"    seg:   {seg_raw:.4f} -> {seg_raw * loss_fn.w['seg']:.4f}")
                     print(f"    perc:  {perc_raw:.4f} -> {perc_raw * loss_fn.w['perc']:.4f}")
+                    print(f"    current_lr: {opt.param_groups[0]['lr']:.6f}")
                     
                     print(f"z_shape C mean/std: {zs_mean:.6f} / {zs_std:.6f}")
                     print(f"z_style C mean/std: {zt_mean:.6f} / {zt_std:.6f}")
