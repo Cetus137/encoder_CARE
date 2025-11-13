@@ -49,6 +49,19 @@ def _rbf_kernel(x, y, sigma_list):
     return K
 
 
+def segmentation_entropy_loss(seg, eps=1e-6):
+    """Encourage segmentation to have diversity (not all 0s or all 1s).
+    Returns negative entropy - we want to maximize entropy to prevent collapse.
+    """
+    # seg: (B, 1, H, W) - probabilities after sigmoid
+    p = seg.mean()  # average probability across all pixels
+    # Binary entropy: -p*log(p) - (1-p)*log(1-p)
+    # We want this to be high (close to 0.5 is maximum entropy)
+    entropy = -(p * torch.log(p + eps) + (1 - p) * torch.log(1 - p + eps))
+    # Return negative entropy as loss (minimizing this maximizes entropy)
+    return -entropy
+
+
 class TotalLoss:
     def __init__(self, weights=None):
         default = dict(
@@ -58,6 +71,7 @@ class TotalLoss:
             cross=10.0,
             seg=5.0,
             perc=1.0,
+            seg_entropy=1.0,  # Entropy regularization to prevent constant segmentations
         )
         if weights is None:
             weights = default
@@ -79,6 +93,10 @@ class TotalLoss:
         loss_cross = l1_loss(preds['S_x_CD'], targets['S_x_D'])
 
         loss_seg = dice_loss(preds['S_x_CD'], targets['S_x_D'])
+        
+        # Entropy regularization to prevent segmentation collapse
+        loss_seg_entropy = (segmentation_entropy_loss(preds['S_x_CD']) + 
+                           segmentation_entropy_loss(targets['S_x_D'])) * 0.5
 
         # optional perceptual: use encoded features
         if 'feat_x_CD' in preds and 'feat_x_D' in preds:
@@ -92,7 +110,9 @@ class TotalLoss:
             + self.w['align'] * loss_align
             + self.w['cross'] * loss_cross
             + self.w['seg'] * loss_seg
+            + self.w.get('seg_entropy', 0.0) * loss_seg_entropy
             + self.w['perc'] * loss_perc
         )
 
-        return dict(total=total, rec=loss_rec, kl=loss_kl, align=loss_align, cross=loss_cross, seg=loss_seg, perc=loss_perc)
+        return dict(total=total, rec=loss_rec, kl=loss_kl, align=loss_align, cross=loss_cross, seg=loss_seg, 
+                   seg_entropy=loss_seg_entropy, perc=loss_perc)
